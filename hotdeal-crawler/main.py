@@ -257,10 +257,10 @@ def main():
         except Exception as e:
             print(f"  -> 수집 에러 발생: {e}")
             
-        # ⭐️ 봇 탐지 및 IP 차단 방지를 위해 반드시 상세 페이지마다 1~2초 쉬어줍니다!
+        # 봇 탐지 및 IP 차단 방지를 위해 반드시 상세 페이지마다 1~2초 쉬어줍니다!
         time.sleep(random.uniform(2.0, 4.0))
         
-    print("\n=== 🔍 긁어온 데이터 확인 (여섯 번째 데이터) ===")
+    #print("\n=== 긁어온 데이터 확인 (여섯 번째 데이터) ===")
     if enriched_items:
         print(json.dumps(enriched_items[5], ensure_ascii=False, indent=2))
     print("=======================================\n")
