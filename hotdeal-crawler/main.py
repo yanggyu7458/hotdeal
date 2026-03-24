@@ -14,7 +14,14 @@ SOURCE = "FMKOREA"
 
 KST = timezone(timedelta(hours=9))
 
-session = cf_requests.Session(impersonate="chrome")
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Referer": "https://www.fmkorea.com/",
+}
+
+session = cf_requests.Session(impersonate="chrome", headers=HEADERS)
 
 '''
 def pick_headers():
@@ -57,6 +64,11 @@ def parse_list_page(html: str):
     seen = set()
     
     for a in links:
+        
+        #  공지사항 필터링: 부모 태그에 'notice' 클래스가 있거나, 제목에 '[공지]'가 있으면 건너뜀
+        if a.find_parent(class_="notice") or "[공지]" in a.get_text(strip=True):
+            continue
+        
         href = a.get("href", "").strip()
         title = a.get_text(strip=True)
         
@@ -114,7 +126,11 @@ def parse_list_page(html: str):
             "scrapedAt": datetime.now(KST).isoformat(timespec="seconds") 
         })
         
-    return results[:10]
+    #  수집 개수 제한: 5개가 꽉 차면 즉시 크롤링 중단
+        if len(results) >= 3:
+            break
+            
+    return results
 
 def fetch_detail_and_update(item: dict):
     """
@@ -124,6 +140,7 @@ def fetch_detail_and_update(item: dict):
     resp = session.get(url, timeout=15)
     
     if resp.status_code != 200:
+        print(f"  -> 상세 페이지 접근 실패! (상태 코드: {resp.status_code}) - {url}")
         return item
         
     soup = BeautifulSoup(resp.text, "lxml")
@@ -221,9 +238,7 @@ def fetch_detail_and_update(item: dict):
 
 def fetch_hotdeal_list():
     # requests 대신 scraper 사용 -> 여전히 430 으로 막힘. curl_cffi 사용
-    #scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False})
-    
-    resp = cf_requests.get(FMKOREA_GOTDEAL_URL, impersonate="chrome", timeout=15)
+    resp = session.get(FMKOREA_GOTDEAL_URL, timeout=15)
     
     if resp.status_code != 200:
         print(f"Error: {resp.status_code}")
@@ -261,8 +276,8 @@ def main():
         time.sleep(random.uniform(2.0, 4.0))
         
     #print("\n=== 긁어온 데이터 확인 (여섯 번째 데이터) ===")
-    if enriched_items:
-        print(json.dumps(enriched_items[5], ensure_ascii=False, indent=2))
+    #if enriched_items:
+    #    print(json.dumps(enriched_items[0], ensure_ascii=False, indent=2))
     print("=======================================\n")
     
     print("백엔드로 데이터를 전송합니다...")

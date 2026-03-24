@@ -59,7 +59,7 @@ export default function HomeScreen() {
       if (pageNumber === 0 && !refreshing) setLoading(true);
       else if (pageNumber > 0) setFetchingMore(true);
 
-      let BACKEND_URL = `http://10.222.242.133:8080/api/deals?page=${pageNumber}&size=30`; 
+      let BACKEND_URL = `http://172.30.1.37:8080/api/deals?page=${pageNumber}&size=30`; 
 
       // 펨코 DB에 맞게 카테고리 이름 변경
       let queryCategory = category;
