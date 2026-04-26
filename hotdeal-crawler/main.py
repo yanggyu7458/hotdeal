@@ -1,3 +1,4 @@
+import os
 import re
 import time
 import random
@@ -11,6 +12,7 @@ from bs4 import BeautifulSoup
 BACKEND_INGEST_URL = "http://localhost:8080/api/deals/ingest"
 FMKOREA_GOTDEAL_URL = "https://www.fmkorea.com/hotdeal"
 SOURCE = "FMKOREA"
+COOKIE_FILE = "fm_cookies.json"
 
 KST = timezone(timedelta(hours=9))
 
@@ -21,7 +23,38 @@ HEADERS = {
     "Referer": "https://www.fmkorea.com/",
 }
 
-session = cf_requests.Session(impersonate="chrome", headers=HEADERS)
+def create_session():
+    """ 세션을 생성하고 저장된 쿠키가 있으면 불러오는 함수 """
+    # 매번 똑같은 브라우저면 의심하므로 랜덤하게 섞어줍니다.
+    impersonates = ["chrome116", "chrome120", "edge101", "safari15_3"]
+    session = cf_requests.Session(impersonate=random.choice(impersonates), headers=HEADERS)
+    
+    # 이전에 저장해둔 쿠키 파일이 있다면 읽어서 세션에 장착합니다.
+    if os.path.exists(COOKIE_FILE):
+        try:
+            with open(COOKIE_FILE, "r") as f:
+                saved_cookies = json.load(f)
+                for k, v in saved_cookies.items():
+                    session.cookies.set(k, v, domain=".fmkorea.com")
+            print("  -> ==== 기존 통행증(쿠키)을 장착했습니다. ====")
+        except Exception as e:
+            print("  -> 쿠키 로드 실패:", e)
+            
+    return session
+
+def save_cookies(session):
+    """ 성공적으로 접속한 후 발급받은 쿠키를 파일에 저장하는 함수 """
+    try:
+        cookies_dict = session.cookies.get_dict()
+        if cookies_dict:
+            with open(COOKIE_FILE, "w") as f:
+                json.dump(cookies_dict, f)
+            print("  -> ==== 새로운 통행증(쿠키)을 저장했습니다. ====")
+    except Exception as e:
+        print("  -> 쿠키 저장 실패:", e)
+
+# 전역 세션 변수 생성
+session = create_session()
 
 '''
 def pick_headers():
@@ -282,6 +315,11 @@ def main():
     
     print("백엔드로 데이터를 전송합니다...")
     ingest_to_backend(enriched_items)
+    
+    
+    # 백엔드 전송까지 완료된 후, 갱신된 쿠키를 저장합니다!
+    save_cookies(session)
+    
     print("모든 작업이 완료되었습니다!")
 
 if __name__ == "__main__":

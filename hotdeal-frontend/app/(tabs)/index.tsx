@@ -59,12 +59,15 @@ export default function HomeScreen() {
       if (pageNumber === 0 && !refreshing) setLoading(true);
       else if (pageNumber > 0) setFetchingMore(true);
 
-      let BACKEND_URL = `http://172.30.1.37:8080/api/deals?page=${pageNumber}&size=30`; 
+      //let BACKEND_URL = `http://192.168.219.107/api/deals?page=${pageNumber}&size=30`; 
+      //let BACKEND_URL = `https://charlie-unbraved-digressively.ngrok-free.dev/api/deals?page=${pageNumber}&size=30`; 
+      let BACKEND_URL = `http://43.201.101.111:8080/api/deals?page=${pageNumber}&size=30`;
 
-      // 펨코 DB에 맞게 카테고리 이름 변경
+      // DB에 맞게 카테고리 이름 변경
       let queryCategory = category;
       if (category === '생활/식품') queryCategory = '먹거리';
       if (category === '패션/의류') queryCategory = '의류/패션';
+      if (category === '의류') queryCategory = '의류/패션';
 
       // '전체'가 아니라면 URL 뒤에 카테고리를 붙여서 요청
       // 번경된 이름(queryCategory)으로 요청하도록 수정

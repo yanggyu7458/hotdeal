@@ -42,7 +42,7 @@ public class DealController {
         @RequestParam(name = "size", defaultValue = "30") int size,
         @RequestParam(name = "category", required = false) String category // 카테고리 추가
     ) {
-        PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "postedAt").and(Sort.by(Sort.Direction.DESC, "scrapedAt")));
+        PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
 
         // 카테고리가 없거나 "전체"일 경우 모든 데이터 반환
         if (category == null || category.isEmpty() || category.equals("전체")) {
