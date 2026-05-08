@@ -7,7 +7,8 @@ import json
 from curl_cffi import requests as cf_requests
 from bs4 import BeautifulSoup
 
-BACKEND_INGEST_URL = "http://localhost:8080/api/deals/ingest"
+#BACKEND_INGEST_URL = "http://localhost:8080/api/deals/ingest"
+BACKEND_INGEST_URL = "http://43.201.101.111:8080/api/deals/ingest"
 PPOMPPU_GOTDEAL_URL = "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu"
 SOURCE = "PPOMPPU"
 

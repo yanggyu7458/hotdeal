@@ -9,7 +9,7 @@ import requests
 from curl_cffi import requests as cf_requests ## 우회 전용 모듈
 from bs4 import BeautifulSoup
 
-BACKEND_INGEST_URL = "http://localhost:8080/api/deals/ingest"
+BACKEND_INGEST_URL = "http://43.201.101.111:8080/api/deals/ingest"
 FMKOREA_GOTDEAL_URL = "https://www.fmkorea.com/hotdeal"
 SOURCE = "FMKOREA"
 COOKIE_FILE = "fm_cookies.json"
