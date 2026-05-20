@@ -51,4 +51,10 @@ public class DealController {
         // 특정 카테고리가 있을 경우 해당 카테고리만 반환
         return dealRepository.findByCategory(category, pageRequest).getContent();
     }
+
+    // 검색 : /api/deals/search?keyword=keyword
+    @GetMapping("/search")
+    public List<Deal> searchDeals(@RequestParam String keyword) {
+        return dealRepository.findByTitleContainingOrderByPostedAtDesc(keyword);
+    }
 }

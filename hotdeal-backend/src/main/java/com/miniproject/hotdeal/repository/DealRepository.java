@@ -1,5 +1,6 @@
 package com.miniproject.hotdeal.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
@@ -14,4 +15,7 @@ public interface DealRepository extends JpaRepository<Deal, Long>{
 
     // 카테고리로 찾으면서 페이징 처리
     Page<Deal> findByCategory(String category, Pageable pageable);
+
+    // 제목에 특정 키워드가 포함된 핫딜을 최신순으로 찾기
+    List<Deal> findByTitleContainingOrderByPostedAtDesc(String keyword);
 }
