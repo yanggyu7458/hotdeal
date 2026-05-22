@@ -1,6 +1,8 @@
 import { StyleSheet, Text, View, FlatList, Image, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
 // 타입 정의
 interface Deal {
@@ -24,25 +26,24 @@ const CATEGORIES = ['전체', 'PC/하드웨어', '가전/TV', '생활/식품', '
 
 export default function HomeScreen() {
   const router = useRouter();
+  // 메인 탭 상태 관리      2026.05.20 추가
+  const [mainTab, setMainTab] = useState<'hotdeal' | 'cvs'>('hotdeal');
+
   const [deals, setDeals] = useState<Deal[]>([]);
-  
   // 무한 스크롤을 위한 핵심 상태값들
   const [page, setPage] = useState(0); // 현재 요청할 페이지 번호
   const [loading, setLoading] = useState(true); // 처음 앱을 켰을 때의 로딩 상태
   const [fetchingMore, setFetchingMore] = useState(false); // 바닥에 닿아서 추가로 가져오는 중인지 여부
   const [isListEnd, setIsListEnd] = useState(false); // 더 이상 가져올 데이터가 없는지 확인
-
   // 현재 선택된 카테고리 상태 (기본값 : '전체')
   const [selectedCategory, setSelectedCategory] = useState('전체');
-
   // 당겨서 새로고침 상태
   const [refreshing, setRefreshing] = useState(false);
-
   // 위로가기 버튼 표시 여부 & FlatList 참조 조종기
   const [showTopButton, setShowTopButton] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
-  // 처음 앱 화면이 뜰 때 0번 페이지를 호출합니다.
+  // 처음 앱 화면이 뜰 때 0번 페이지를 호출
   // 카테고리가 바뀔 때마다 상태를 먼저 초기화하고 새 데이터를 부르도록 변경
   useEffect(() => {
     setDeals([]); // 바구니 비우기
@@ -162,7 +163,7 @@ export default function HomeScreen() {
         style={[styles.thumbnail, item.isExpired && styles.expiredThumbnail]} 
       />
       <View style={styles.infoContainer}>
-        {item.isExpired && <Text style={styles.expiredBadge}>종료된 핫딜</Text>}
+        {item.isExpired ? <Text style={styles.expiredBadge}>종료된 핫딜</Text> : null}
         <Text style={[styles.title, item.isExpired && styles.expiredText]} numberOfLines={2}>
           {item.title || '제목 없음'}
         </Text>
@@ -185,19 +186,57 @@ export default function HomeScreen() {
     </TouchableOpacity>
   );
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>🔥 실시간 핫딜</Text>
+  // 최상단 헤더 컴포넌트
+  const renderHeader = () => (
+    <View style={styles.headerContainer}>
+      <View style={styles.logoArea}>
+        <Text style={styles.logoText}>🔥 핫딜 모음</Text>
       </View>
+      <View style={styles.headerIcons}>
+        <TouchableOpacity onPress={() => router.push('/search')} style={styles.iconButton}>
+          <Ionicons name="search" size={24} color="#333" />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.iconButton}>
+          <Ionicons name="moon-outline" size={24} color="#333" />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.iconButton}>
+          <Ionicons name="menu" size={24} color="#333" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
-      {/* 가로로 스와이프 되는 카테고리 필터 영역 */}
+  // 메인 탭 컴포넌트
+  const renderMainTab = () => (
+    <View style={styles.mainTabContainer}>
+      <TouchableOpacity 
+        style={[styles.mainTabButton, mainTab === 'hotdeal' && styles.mainTabActive]}
+        onPress={() => setMainTab('hotdeal')}
+      >
+        <Text style={[styles.mainTabText, mainTab === 'hotdeal' && styles.mainTabTextActive]}>
+          핫딜 모음
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity 
+        style={[styles.mainTabButton, mainTab === 'cvs' && styles.mainTabActive]}
+        onPress={() => setMainTab('cvs')}
+      >
+        <Text style={[styles.mainTabText, mainTab === 'cvs' && styles.mainTabTextActive]}>
+          편의점 행사모음
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // 핫딜모음 화면
+  const renderHotdealContent = () => (
+    <View style={styles.contentArea}>
+      // 서브 카테고리 가로 스크롤 영역
       <View style={styles.categoryContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
           {CATEGORIES.map((cat, index) => (
             <TouchableOpacity 
               key={index} 
-              // 선택된 카테고리면 빨간색 배경, 아니면 하얀색 배경 스타일을 줍니다
               style={[styles.categoryButton, selectedCategory === cat && styles.categoryButtonActive]}
               onPress={() => handleCategoryPress(cat)}
             >
@@ -209,12 +248,17 @@ export default function HomeScreen() {
         </ScrollView>
       </View>
 
+      <View style={styles.titleArea}>
+        <Text style={styles.mainTitle}>🔥 실시간 핫딜</Text>
+        <Text style={styles.subTitle}>커뮤니티의 실시간 핫딜을 한눈에 보기</Text>
+      </View>
+
+      // 핫딜 리스트 영역
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#E53935" />
         </View>
       ) : deals.length === 0 ? (
-        // 해당 카테고리에 핫딜이 없을 때 보여줄 화면
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>해당 카테고리에 핫딜이 없습니다. </Text>
         </View>
@@ -222,41 +266,84 @@ export default function HomeScreen() {
         <FlatList
           ref={flatListRef}
           data={deals}
-          keyExtractor={(item, index) => `${item.externalId}-${index}`} // 만약 같은 ID가 넘어올 경우를 대비해 index 추가
+          keyExtractor={(item, index) => `${item.externalId}-${index}`}
           renderItem={renderDealItem}
           contentContainerStyle={styles.listContainer}
           onEndReached={handleLoadMore}
-          onEndReachedThreshold={0.1} // 텅 빈 상태에서 훅훅 넘어가지 않도록 바닥 감지 민감도를 최적화 (0.5 -> 0.1)
+          onEndReachedThreshold={0.1}
           ListFooterComponent={renderFooter}
-                         
           refreshing={refreshing}
           onRefresh={onRefresh}
-                       
           onScroll={handleScroll}
           scrollEventThrottle={16}
         />
       )}
+    </View>
+  );
 
-      {/* 위로가기 플로팅 버튼 (showTopButton이 true일 때만 보여줌) */}
+  // 편의점 행사모음 화면 (임시)
+  const renderCvsContent = () => (
+    <View style={styles.contentArea}>
+      <View style={styles.titleArea}>
+        <Text style={styles.mainTitle}>🏪 이달의 편의점 행사모음</Text>
+        <Text style={styles.subTitle}>편의점에서 진행하는 다양한 행사들을 모아봤어요</Text>
+      </View>
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyText}>편의점 행사모음은 곧 업데이트됩니다! </Text>
+      </View>
+    </View>
+  );
+
+  // 최종 화면 조립
+  return (
+    <SafeAreaView style={styles.container}>
+      {renderHeader()}
+      {renderMainTab()}
+      {mainTab === 'hotdeal' ? renderHotdealContent() : renderCvsContent()}
+
+      {/* 위로가기 플로팅 버튼 */}
       {showTopButton && (
         <TouchableOpacity style={styles.fab} onPress={scrollToTop} activeOpacity={0.8}>
           <Text style={styles.fabText}>↑</Text>
         </TouchableOpacity>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F6F8' },
-  header: { paddingTop: 60, paddingBottom: 15, paddingHorizontal: 20, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#EEEEEE' },
-  headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#E53935' },
+
+
+  // 헤더 스타일
+  headerContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 15, height: 60, backgroundColor: '#fff' },
+  logoArea: { flexDirection: 'row', alignItems: 'center' },
+  logoText: { fontSize: 20, fontWeight: 'bold', color: '#E53935' }, // 기존 핫딜 빨간색 유지
+  headerIcons: { flexDirection: 'row' },
+  iconButton: { marginLeft: 15 },
+  
+  // 메인 탭 스타일
+  mainTabContainer: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#eee', backgroundColor: '#fff' },
+  mainTabButton: { flex: 1, alignItems: 'center', paddingVertical: 15 },
+  mainTabActive: { borderBottomWidth: 2, borderBottomColor: '#E53935' }, // 빨간색 포인트
+  mainTabText: { fontSize: 16, color: '#999', fontWeight: '600' },
+  mainTabTextActive: { color: '#E53935' },
+
+  // 콘텐츠 영역 공통
+  contentArea: { flex: 1 },
+  titleArea: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10, backgroundColor: '#F5F6F8' },
+  mainTitle: { fontSize: 22, fontWeight: 'bold', color: '#333', marginBottom: 5 },
+  subTitle: { fontSize: 14, color: '#777' },
+
+  // 서브 카테고리 스타일
   categoryContainer: { backgroundColor: '#FFFFFF', paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: '#EEEEEE' },
   categoryScroll: { paddingHorizontal: 15, alignItems: 'center' },
   categoryButton: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F0F0F0', marginRight: 8 },
   categoryButtonActive: { backgroundColor: '#E53935' }, 
   categoryText: { fontSize: 14, color: '#666666', fontWeight: '600' },
   categoryTextActive: { color: '#FFFFFF' }, 
+
+  // 리스트 관련 스타일
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 50 },
   emptyText: { fontSize: 16, color: '#888888' },
   listContainer: { padding: 15 },
@@ -269,10 +356,8 @@ const styles = StyleSheet.create({
   title: { fontSize: 16, fontWeight: '600', color: '#333333', marginBottom: 6, lineHeight: 22 },
   expiredText: { color: '#999999', textDecorationLine: 'line-through' },
   priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  
-  // mallName에 flex: 1과 여백을 줘서 가격 텍스트가 밀리지 않게 방어합니다.
+  // mallName에 flex: 1과 여백을 줘서 가격 텍스트가 밀리지 않게 방어
   mallName: { flex: 1, fontSize: 13, color: '#1E88E5', fontWeight: 'bold', marginRight: 10 },
-
   price: { fontSize: 16, fontWeight: 'bold', color: '#E53935' },
   metaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   shipping: { fontSize: 12, color: '#888888' },
