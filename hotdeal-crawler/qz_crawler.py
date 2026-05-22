@@ -1,14 +1,18 @@
 from curl_cffi import requests
 from bs4 import BeautifulSoup
 import re
+import time
 from datetime import datetime
 
-BACKEND_URL = "http://localhost:8080/api/deals/ingest"
-#BACKEND_URL = "http://43.201.101.111:8080/api/deals/ingest"
+#BACKEND_URL = "http://localhost:8080/api/deals/ingest"
+BACKEND_URL = "http://43.201.101.111:8080/api/deals/ingest"
 
-# 1. 상세 페이지 정보 추출 함수 추가!
+# 1. 상세 페이지 정보 추출 함수 추가
 def fetch_quasarzone_detail(detail_url):
     try:
+        # 상세 페이지 요청 전에 1.5초 대기
+        time.sleep(1.5)
+        
         resp = requests.get(detail_url, impersonate="chrome110")
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, 'html.parser')
@@ -34,16 +38,34 @@ def fetch_quasarzone_detail(detail_url):
         th_tags = soup.select('table.market-info-view-table th')
         for th in th_tags:
             if "판매처" in th.text:
-                td = th.find_next_sibling('td')
+                td = th.find_parent('tr').find('td')
                 if td:
-                    mall_name = td.text.strip()
+                    text_content = td.text.strip()
+                    img_tag = td.find('img')
+                    if text_content:
+                        mall_name = text_content
+                    elif img_tag and img_tag.get('alt'):
+                        mall_name = img_tag['alt'].strip()
                 break
             
         
         
         # [본문 내용] div#new_contents 안의 텍스트 추출 (엔터 유지)
-        content_tag = soup.select_one('div#new_contents') or soup.select_one('div.view-content')
-        content = content_tag.get_text(separator='\n', strip=True) if content_tag else ""
+        content = ""
+        
+        # 1순위: 퀘이사존이 수정용으로 숨겨둔 원본 텍스트 영역 털기 (가장 확실함)
+        textarea_tag = soup.select_one('textarea#org_contents')
+        if textarea_tag and textarea_tag.text.strip():
+            content = textarea_tag.text.strip()
+        else:
+            # 2순위: 혹시 textarea가 없다면 기존 방식대로 보이는 영역에서 추출
+            content_tag = soup.select_one('div#new_contents') or soup.select_one('div.view-content') or soup.select_one('div.common-view-area')
+            if content_tag:
+                content = content_tag.get_text(separator='\n', strip=True)
+                
+                # 3순위: 텍스트는 하나도 없고 순수하게 이미지만 띡 올려둔 글일 경우
+                if not content and content_tag.find('img'):
+                    content = "(본문이 이미지로 작성된 게시글입니다.)"
         
         # [댓글 수] span#comm_cnt
         comm_tag = soup.select_one('span#comm_cnt')
@@ -125,6 +147,7 @@ def fetch_quasarzone_list():
                 "sourceUrl": source_url,
                 "shopUrl": detail_info["shopUrl"] if detail_info else "",
                 "thumbnailUrl": thumbnail_url,
+                "mallName": detail_info["mallName"] if detail_info else "기타",
                 "price": price_number,
                 "priceText": price_text,
                 "shippingFee": shipping_fee,
@@ -140,7 +163,7 @@ def fetch_quasarzone_list():
             parsed_deals.append(deal_data)
             
             if len(parsed_deals) >= 10:
-                print("\n 10개 수집 제한에 도달하여 목록 탐색을 멈춥니다!")
+                print("\n 10개 수집 제한에 도달")
                 break
 
         except Exception as e:
@@ -157,7 +180,7 @@ def send_to_backend(deals):
         # 실제 HTTP 전송
         response = requests.post(BACKEND_URL, data=json.dumps(deals).encode('utf-8'), headers=headers)
         response.raise_for_status()
-        print(f" 백엔드 전송 완료! (상태 코드: {response.status_code})")
+        print(f" 백엔드 전송 완료 (상태 코드: {response.status_code})")
     except Exception as e:
         print(f" 전송 실패: {e}")
 
@@ -165,4 +188,4 @@ if __name__ == "__main__":
     deals = fetch_quasarzone_list()
     if deals:
         send_to_backend(deals)
-        print("\n 모든 작업이 완료되었습니다!")
+        print("\n 모든 작업이 완료되었습니다")

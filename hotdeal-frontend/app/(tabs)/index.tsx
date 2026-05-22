@@ -163,7 +163,7 @@ export default function HomeScreen() {
         style={[styles.thumbnail, item.isExpired && styles.expiredThumbnail]} 
       />
       <View style={styles.infoContainer}>
-        {item.isExpired && <Text style={styles.expiredBadge}>종료된 핫딜</Text>}
+        {item.isExpired ? <Text style={styles.expiredBadge}>종료된 핫딜</Text> : null}
         <Text style={[styles.title, item.isExpired && styles.expiredText]} numberOfLines={2}>
           {item.title || '제목 없음'}
         </Text>
