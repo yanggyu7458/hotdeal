@@ -17,6 +17,7 @@ import com.miniproject.hotdeal.controller.dto.request.DealUpsertRequest;
 import com.miniproject.hotdeal.domain.deal.Deal;
 import com.miniproject.hotdeal.repository.DealRepository;
 import com.miniproject.hotdeal.service.DealService;
+import com.miniproject.hotdeal.service.SearchService;
 
 import lombok.RequiredArgsConstructor;
 
@@ -27,6 +28,7 @@ import lombok.RequiredArgsConstructor;
 public class DealController {
     private final DealService dealService;
     private final DealRepository dealRepository;
+    private final SearchService searchService;
 
     // 크롤러 -> 백엔드 저장
     @PostMapping("/ingest")
@@ -55,6 +57,16 @@ public class DealController {
     // 검색 : /api/deals/search?keyword=keyword
     @GetMapping("/search")
     public List<Deal> searchDeals(@RequestParam String keyword) {
+
+        // 검색어 랭킹 점수 +1 증가
+        searchService.addSearchKeyword(keyword);
+
         return dealRepository.findByTitleContainingOrderByPostedAtDesc(keyword);
+    }
+
+    // 인기 검색어 Top 10 반환 : /api/deals/popular-searches
+    @GetMapping("/popular-searches")
+    public List<String> getPopularSearches() {
+        return searchService.getPopularKeywords();
     }
 }
