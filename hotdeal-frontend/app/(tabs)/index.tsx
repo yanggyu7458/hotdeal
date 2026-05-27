@@ -231,7 +231,7 @@ export default function HomeScreen() {
   // 핫딜모음 화면
   const renderHotdealContent = () => (
     <View style={styles.contentArea}>
-      // 서브 카테고리 가로 스크롤 영역
+      {/* 서브 카테고리 가로 스크롤 영역 */}
       <View style={styles.categoryContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
           {CATEGORIES.map((cat, index) => (
@@ -253,7 +253,7 @@ export default function HomeScreen() {
         <Text style={styles.subTitle}>커뮤니티의 실시간 핫딜을 한눈에 보기</Text>
       </View>
 
-      // 핫딜 리스트 영역
+      {/* 핫딜 리스트 영역 */}
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#E53935" />

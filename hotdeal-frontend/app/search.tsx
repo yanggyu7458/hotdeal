@@ -1,8 +1,9 @@
-import React, { useState} from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, Image, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator } from "react-native";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from "expo-router";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // 핫딜 데이터 타입 정의(index.tsx에서 사용한 Deal 타입과 동일하게 정의)
 interface Deal {
@@ -32,8 +33,65 @@ export default function SearchScreen() {
   const [isSearching, setIsSearching] = useState<boolean>(false); // 검색 중 상태
   const [hasSearched, setHasSearched] = useState<boolean>(false); // 검색 실행 여부
 
+  const [popularSearches, setPopularSearches] = useState<string[]>([]); // 백엔드에서 받아온 인기 검색어 저장용 상태
+
+  const [recentSearches, setRecentSearches] = useState<string[]>([]); // AsyncStorage에서 불러온 최근 검색어 저장용 상태
+
   const dummyRecentSearches: string[] = ['면도기', '브라운 면도기', '맥심', '이어폰'];
   const dummyPopularSearches: string[] = ['s26', '키보드', '스위치2', '에어컨', '모니터', '쌀'];
+
+  useEffect(() => {
+    loadRecentSearches();
+    fetchPopularSearches(); // (인기 검색어 로딩)
+  }, []);
+
+  const loadRecentSearches = async () => {
+    try {
+      // 'RECENT_SEARCHES'라는 이름의 박스를 찾아서 꺼냄
+      const savedSearches = await AsyncStorage.getItem('RECENT_SEARCHES'); 
+      if (savedSearches !== null) {
+        setRecentSearches(JSON.parse(savedSearches)); // 글자를 다시 배열로 조립
+      }
+    } catch (error) {
+      console.error('검색 기록 불러오기 실패:', error);
+    }
+  };
+
+  // 검색할 때: 새로운 기록 저장하기
+  const saveRecentSearch = async (keyword: string) => {
+    try {
+      // 기존 배열에서 똑같은 단어가 있으면 지우고(중복 방지), 새 단어를 맨 앞에 추가
+      const filtered = recentSearches.filter(item => item !== keyword);
+      const updatedSearches = [keyword, ...filtered].slice(0, 10); // 최대 10개까지만 유지
+      
+      setRecentSearches(updatedSearches); // 화면(상태) 즉시 업데이트
+      await AsyncStorage.setItem('RECENT_SEARCHES', JSON.stringify(updatedSearches)); // 창고에 텍스트로 압축해서 저장
+    } catch (error) {
+      console.error('검색 기록 저장 실패:', error);
+    }
+  };
+
+  // 전체 삭제 버튼 누를 때
+  const clearAllRecentSearches = async () => {
+    try {
+      await AsyncStorage.removeItem('RECENT_SEARCHES'); // 박스 자체를 폐기
+      setRecentSearches([]); // 화면에서도 싹 비움
+    } catch (error) {
+      console.error('검색 기록 삭제 실패:', error);
+    }
+  };
+
+  const fetchPopularSearches = async () => {
+      try {
+        const response = await fetch('http://43.201.101.111:8080/api/deals/popular-searches');
+        if (response.ok) {
+          const data = await response.json();
+          setPopularSearches(data); // 받아온 인기 검색어를 상태에 저장
+        }
+      } catch (error) {
+        console.error('인기 검색어 가져오기 실패:', error);
+      }
+    };
 
   // 백엔드 API 호출 함수
   const handleSearch = async () => {
@@ -45,26 +103,28 @@ export default function SearchScreen() {
       return;
     }
 
-      setIsSearching(true);
-      setHasSearched(true);
+    saveRecentSearch(searchQuery.trim());
 
-      try {
-        const BACKEND_URL = `http://43.201.101.111:8080/api/deals/search?keyword=${encodeURIComponent(searchQuery)}`;
-        const response = await fetch(BACKEND_URL);
-        const data = await response.json();
+    setIsSearching(true);
+    setHasSearched(true);
 
-        if (response.ok) {
-          setSearchResults(data); // 검색 결과를 상태에 저장
-        } else {
-          console.error('검색 실패:', data.message || '알 수 없는 오류');
-          setSearchResults([]); // 검색 실패 시 결과 초기화
-        }
-      } catch (error) {
-        console.error('검색 중 오류 발생:', error);
-        setSearchResults([]); // 오류 발생 시 결과 초기화
-      } finally {
-        setIsSearching(false);
+    try {
+      const BACKEND_URL = `http://43.201.101.111:8080/api/deals/search?keyword=${encodeURIComponent(searchQuery)}`;
+      const response = await fetch(BACKEND_URL);
+      const data = await response.json();
+
+      if (response.ok) {
+        setSearchResults(data); // 검색 결과를 상태에 저장
+      } else {
+        console.error('검색 실패:', data.message || '알 수 없는 오류');
+        setSearchResults([]); // 검색 실패 시 결과 초기화
       }
+    } catch (error) {
+      console.error('검색 중 오류 발생:', error);
+      setSearchResults([]); // 오류 발생 시 결과 초기화
+    } finally {
+      setIsSearching(false);
+    }
  };
     
   // 검색어 지우기 버튼(x버튼) 클릭 시 초기화
@@ -185,24 +245,35 @@ export default function SearchScreen() {
             {activeTab === 'recent' && (
               <View style={{ flex: 1 }}>
                 <View style={styles.recentHeader}>
-                  <TouchableOpacity>
+                  <TouchableOpacity onPress={clearAllRecentSearches}>
                     <Text style={styles.clearAllText}>전체삭제</Text>
                   </TouchableOpacity>
                 </View>
                 <FlatList
-                  data={dummyRecentSearches}
+                  data={recentSearches}
                   keyExtractor={(item, index) => index.toString()}
                   renderItem={renderRecentItem}
+                  ListEmptyComponent={
+                    <View style={{ padding: 20, alignItems: 'center' }}>
+                      <Text style={{ color: '#999' }}>최근 검색 기록이 없습니다.</Text>
+                    </View>
+                  }
                 />
               </View>
             )}
 
             {activeTab === 'popular' && (
               <FlatList
-                data={dummyPopularSearches}
+                data={popularSearches} // 가짜 데이터 대신 진짜 상태값을 꽂아줍니다!
                 keyExtractor={(item, index) => index.toString()}
                 renderItem={renderPopularItem}
                 contentContainerStyle={{ paddingTop: 10 }}
+                // 만약 Redis에 데이터가 하나도 없을 때 보여줄 화면
+                ListEmptyComponent={
+                  <View style={{ padding: 20, alignItems: 'center' }}>
+                    <Text style={{ color: '#999' }}>아직 검색 데이터가 없습니다.</Text>
+                  </View>
+                }
               />
             )}
           </View>
