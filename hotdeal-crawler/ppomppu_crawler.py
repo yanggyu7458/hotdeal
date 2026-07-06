@@ -6,9 +6,10 @@ import json
 
 from curl_cffi import requests as cf_requests
 from bs4 import BeautifulSoup
+from common.logger import get_logger
 
-#BACKEND_INGEST_URL = "http://localhost:8080/api/deals/ingest"
-BACKEND_INGEST_URL = "http://43.201.101.111:8080/api/deals/ingest"
+BACKEND_INGEST_URL = "http://localhost:8080/api/deals/ingest"
+#BACKEND_INGEST_URL = "http://43.201.101.111:8080/api/deals/ingest"
 PPOMPPU_GOTDEAL_URL = "https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu"
 SOURCE = "PPOMPPU"
 
@@ -23,6 +24,8 @@ HEADERS = {
 }
 session = cf_requests.Session(impersonate="chrome120", headers=HEADERS)
 
+logger = get_logger("ppomppu")
+
 def parse_list_page(html: str):
     """
     뽐뿌 목록 페이지 파싱
@@ -33,7 +36,7 @@ def parse_list_page(html: str):
     
     #  tr, td 다 무시하고 페이지 내의 "모든 링크(a 태그)"를 다 가져오기
     a_tags = soup.find_all('a')
-    print(f"  -> [debug] 페이지에서 총 {len(a_tags)}개의 링크(a 태그)를 발견했습니다.")
+    logger.debug("페이지 링크 후보 수집 완료. link_count=%d", len(a_tags))
     
     seen_ids = set() # 중복 수집 방지용
     
@@ -57,6 +60,7 @@ def parse_list_page(html: str):
         
         # 뽐뿌는 썸네일과 제목에 링크가 각각 걸려있어서 같은 글이 두 번 잡힙니다. (중복 방지)
         if external_id in seen_ids:
+            logger.debug("중복 게시글 스킵. external_id=%s", external_id)
             continue
             
         # 제목 추출 (태그 안의 텍스트 긁어오기)
@@ -111,6 +115,7 @@ def parse_list_page(html: str):
                     category = category_mapping[cleaned_category]
                 else:
                     category = "기타"
+                    logger.debug("미매핑 카테고리 발견. raw_category=%s, external_id=%s", cleaned_category, external_id)
                     
             if parent_td.select_one('img[src*="end_icon"]'):
                 is_expired = True
@@ -152,8 +157,11 @@ def parse_list_page(html: str):
         
         # 우선 5개만 수집
         if len(results) >= 5:
+            logger.debug("수집 제한 도달. limit=%d", len(results))
             break
         
+    logger.info("뽐뿌 목록 파싱 완료. item_count=%d", len(results))
+    
     return results
 
 def fetch_detail_and_update(item: dict):
@@ -161,10 +169,17 @@ def fetch_detail_and_update(item: dict):
         상세 페이지 파싱 (EUC-KR 디코딩 및 정규식 활용)
     """
     url = item["sourceUrl"]
+    logger.debug("상세 페이지 요청 시작. external_id=%s, url=%s", item.get("externalId"), url)
+    
     resp = session.get(url, timeout=15)
     
     if resp.status_code != 200:
-        print(f" -> 상세 페이지 접근 실패. (상세코드 : {resp.status_code})")
+        logger.warning(
+            "상세 페이지 접근 실패. status_code=%s, external_id=%s, url=%s",
+            resp.status_code,
+            item.get("externalId"),
+            url
+        )
         return item
 
     # 뽐뿌는 ECU-KR 인코딩을 사용, 한글 깨짐 방지를 위해 강제 변환!
@@ -204,6 +219,8 @@ def fetch_detail_and_update(item: dict):
         if match_mall:
             item["mallName"] = match_mall.group(1).strip()
             item["title"] = match_mall.group(2).strip()
+        else:
+            logger.debug("제목 패턴 매칭 실패. external_id=%s, title=%s", item.get("externalId"), full_title)
                 
     # [원본 쇼핑몰 링크 (shopUrl)]
     # li.topTitle-link 안에 있는 a 태그
@@ -241,28 +258,47 @@ def fetch_detail_and_update(item: dict):
     # 추천수
     upvote_span = soup.select_one('#vote_list_btn_txt')
     if upvote_span:
-        item["upvotes"] = int(upvote_span.get_text(strip=True))
+        try:
+            item["upvotes"] = int(upvote_span.get_text(strip=True))
+        except ValueError:
+            logger.debug(
+                "추천수 파싱 실패. external_id=%s, raw_value=%s",
+                item.get("externalId"),
+                upvote_span.get_text(strip=True)
+            )
         
     # 종료된 핫딜 체크
     if soup.find(string=re.compile("종료된 게시물입니다.")):
         item["isExpired"] = True
-        
+    
+    logger.debug(
+        "상세 페이지 파싱 완료. external_id=%s, title=%s, price=%s, mall=%s",
+        item.get("externalId"),
+        item.get("title"),
+        item.get("price"),
+        item.get("mallName")
+    )
+    
     return item
 
 def fetch_hotdeal_list():
+    logger.info("뽐뿌 목록 요청 시작. url=%s", PPOMPPU_GOTDEAL_URL)
     resp = session.get(PPOMPPU_GOTDEAL_URL, timeout=15)
     resp.raise_for_status()
     
     html = resp.content.decode('euc-kr', 'replace')
     
     # 페이지가 정상적으로 불러와졌는지 HTML 길이로 먼저 확인
-    print(f"  -> [debug] 가져온 HTML 전체 길이: {len(html)} 글자")
+    logger.debug("뽐뿌 목록 응답 수신. html_length=%d", len(html))
     
     return parse_list_page(html)
 
 def ingest_to_backend(items):
     if not items:
+        logger.warning("백엔드로 전송할 항목이 없습니다.")
         return
+    
+    logger.info("백엔드 전송 시작. url=%s, item_count=%d", BACKEND_INGEST_URL, len(items))
     
     import requests
     try:
