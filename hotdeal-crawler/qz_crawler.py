@@ -1,11 +1,19 @@
 from curl_cffi import requests
 from bs4 import BeautifulSoup
 import re
+import os
 import time
 from datetime import datetime
+from common.logger import get_logger
 
-#BACKEND_URL = "http://localhost:8080/api/deals/ingest"
-BACKEND_URL = "http://43.201.101.111:8080/api/deals/ingest"
+BACKEND_URL = "http://localhost:8080/api/deals/ingest"
+#BACKEND_URL = "http://43.201.101.111:8080/api/deals/ingest"
+QUASARZONE_URL = os.getenv(
+    "QUASARZONE_URL",
+    "https://quasarzone.com/bbs/qb_saleinfo?page=1"
+)
+
+logger = get_logger("quasarzone")
 
 # 1. 상세 페이지 정보 추출 함수 추가
 def fetch_quasarzone_detail(detail_url):
@@ -13,6 +21,7 @@ def fetch_quasarzone_detail(detail_url):
         # 상세 페이지 요청 전에 1.5초 대기
         time.sleep(1.5)
         
+        logger.debug("상세 페이지 요청 시작. url=%s", detail_url)
         resp = requests.get(detail_url, impersonate="chrome110")
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, 'html.parser')
@@ -26,8 +35,8 @@ def fetch_quasarzone_detail(detail_url):
                 # 2026.05.07 21:28 -> 2026-05-07T21:28:00+09:00
                 dt_obj = datetime.strptime(date_str, "%Y.%m.%d %H:%M")
                 posted_at_iso = dt_obj.strftime("%Y-%m-%dT%H:%M:00+09:00")
-            except:
-                pass
+            except ValueError:
+                logger.debug("작성일 파싱 실패. raw_date=%s, url=%s", date_str, detail_url, exc_info=True)
                 
         # [쇼핑몰 링크] 테이블 내 a 태그의 텍스트가 실제 링크
         shop_url_tag = soup.select_one('table.market-info-view-table tr td a')
@@ -71,6 +80,14 @@ def fetch_quasarzone_detail(detail_url):
         comm_tag = soup.select_one('span#comm_cnt')
         comment_count = int(comm_tag.text.strip()) if comm_tag and comm_tag.text.strip().isdigit() else 0
         
+        logger.debug(
+            "상세 페이지 파싱 완료. url=%s, mall=%s, comment_count=%d, content_length=%d",
+            detail_url,
+            mall_name,
+            comment_count,
+            len(content) if content else 0
+        )
+        
         return {
             "shopUrl": shop_url,
             "mallName": mall_name,
@@ -79,21 +96,24 @@ def fetch_quasarzone_detail(detail_url):
             "commentCount": comment_count
         }
     except Exception as e:
-        print(f"상세 페이지 파싱 실패 ({detail_url}): {e}")
+        logger.error("상세 페이지 파싱 실패. url=%s", detail_url, exc_info=True)
         return None
 
 
 # 2. 목록 파싱 함수 (기존 로직 + 상세 정보 병합)
 def fetch_quasarzone_list():
-    url = "https://quasarzone.com/bbs/qb_saleinfo?page=1"
-    print(f"🚀 퀘이사존 핫딜 크롤링 시작... ({url})")
     
-    response = requests.get(url, impersonate="chrome110")
+    logger.info("퀘이사존 핫딜 목록 요청 시작. url=%s", QUASARZONE_URL)
+
+    response = requests.get(QUASARZONE_URL, impersonate="chrome110", timeout=15)
     response.raise_for_status()
+    
     soup = BeautifulSoup(response.text, 'html.parser')
     
     deal_rows = soup.select('div.market-info-list')
     parsed_deals = []
+    
+    logger.debug("퀘이사존 목록 row 수집 완료. row_count=%d", len(deal_rows))
     
     for row in deal_rows:
         try:
@@ -102,7 +122,9 @@ def fetch_quasarzone_list():
             is_expired = True if status_text == "종료" else False
             
             title_tag = row.select_one('a.subject-link')
-            if not title_tag: continue
+            if not title_tag:
+                logger.debug("제목 링크가 없는 row 스킵")
+                continue
                 
             title = title_tag.text.strip()
             source_url = title_tag.get('href', '')
@@ -111,7 +133,9 @@ def fetch_quasarzone_list():
                 
             match = re.search(r'views/(\d+)', source_url)
             external_id = match.group(1) if match else None
-            if not external_id: continue
+            if not external_id:
+                logger.debug("external_id 추출 실패. source_url=%s, title=%s", source_url, title)
+                continue
 
             thumb_tag = row.select_one('a.thumb img')
             thumbnail_url = thumb_tag.get('src', '') if thumb_tag else ""
@@ -133,7 +157,7 @@ def fetch_quasarzone_list():
 
 
             # 여기서 상세 페이지(detail_url)로 한 번 더 접속해서 깊은 정보 가져오기
-            print(f"  상세 정보 긁는 중: {title}")
+            logger.info("상세 정보 수집 중. external_id=%s, title=%s", external_id, title[:40])
             detail_info = fetch_quasarzone_detail(source_url)
             
             # 차단하지 않도록 상세페이지 요청 사이에 0.5초 정도 쉬어주기
@@ -163,16 +187,22 @@ def fetch_quasarzone_list():
             parsed_deals.append(deal_data)
             
             if len(parsed_deals) >= 10:
-                print("\n 10개 수집 제한에 도달")
+                logger.info("수집 제한 도달. limit=%d", len(parsed_deals))
                 break
 
-        except Exception as e:
-            print(f"파싱 에러: {e}")
-            
+        except Exception:
+            logger.error("목록 row 파싱 중 오류 발생", exc_info=True)
+    
+    logger.info("퀘이사존 목록/상세 파싱 완료. item_count=%d", len(parsed_deals))
     return parsed_deals
 
 def send_to_backend(deals):
-    print(f"\n 백엔드({BACKEND_URL})로 {len(deals)}개 데이터 전송 시작...")
+    if not deals:
+        logger.warning("백엔드로 전송할 데이터가 없습니다.")
+        return
+
+    logger.info("백엔드 전송 시작. url=%s, item_count=%d", BACKEND_URL, len(deals))
+    
     import json
     headers = {'Content-Type': 'application/json'}
     
@@ -180,12 +210,22 @@ def send_to_backend(deals):
         # 실제 HTTP 전송
         response = requests.post(BACKEND_URL, data=json.dumps(deals).encode('utf-8'), headers=headers)
         response.raise_for_status()
-        print(f" 백엔드 전송 완료 (상태 코드: {response.status_code})")
-    except Exception as e:
-        print(f" 전송 실패: {e}")
+        logger.info("백엔드 전송 성공. status_code=%s", response.status_code)
+    except Exception:
+        logger.error("백엔드 전송 실패. item_count=%d", len(deals), exc_info=True)
+        raise
+
+def main():
+    logger.info("=== 퀘이사존 핫딜 크롤링 시작 ===")
+
+    try:
+        deals = fetch_quasarzone_list()
+        send_to_backend(deals)
+        logger.info("=== 퀘이사존 핫딜 크롤링 완료. sent_count=%d ===", len(deals))
+    except Exception:
+        logger.error("퀘이사존 크롤링 작업 실패", exc_info=True)
+        raise
+
 
 if __name__ == "__main__":
-    deals = fetch_quasarzone_list()
-    if deals:
-        send_to_backend(deals)
-        print("\n 모든 작업이 완료되었습니다")
+    main()

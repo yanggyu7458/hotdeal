@@ -4,6 +4,7 @@ import time
 import random
 from datetime import datetime, timezone, timedelta
 import json
+from common.logger import get_logger
 
 import requests
 from curl_cffi import requests as cf_requests ## 우회 전용 모듈
@@ -24,10 +25,16 @@ HEADERS = {
     "Referer": "https://www.fmkorea.com/",
 }
 
+logger = get_logger("fmkorea")
+
 def create_session():
     """ 세션을 생성하고 저장된 쿠키가 있으면 불러오는 함수 """
     # 매번 똑같은 브라우저면 의심하므로 랜덤하게 섞어줍니다.
     impersonates = ["chrome116", "chrome120", "edge101", "safari15_3"]
+    impersonate = random.choice(impersonates)
+    
+    logger.debug("FMKorea 세션 생성 시작. impersonate=%s", impersonate)
+    
     session = cf_requests.Session(impersonate=random.choice(impersonates), headers=HEADERS)
     
     # 이전에 저장해둔 쿠키 파일이 있다면 읽어서 세션에 장착합니다.
@@ -37,10 +44,11 @@ def create_session():
                 saved_cookies = json.load(f)
                 for k, v in saved_cookies.items():
                     session.cookies.set(k, v, domain=".fmkorea.com")
-            print("  -> ==== 기존 통행증(쿠키)을 장착했습니다. ====")
+            logger.info("기존 쿠키를 세션에 장착했습니다. cookie_count=%d", len(saved_cookies))
         except Exception as e:
-            print("  -> 쿠키 로드 실패:", e)
-            
+            logger.warning("쿠키 로드 실패. cookie_file=%s", COOKIE_FILE, exc_info=True)
+    else:
+        logger.debug("저장된 쿠키 파일이 없습니다. cookie_file=%s", COOKIE_FILE)
     return session
 
 def save_cookies(session):
@@ -50,9 +58,11 @@ def save_cookies(session):
         if cookies_dict:
             with open(COOKIE_FILE, "w") as f:
                 json.dump(cookies_dict, f)
-            print("  -> ==== 새로운 통행증(쿠키)을 저장했습니다. ====")
+            logger.info("쿠키 저장 완료. cookie_file=%s, cookie_count=%d", COOKIE_FILE, len(cookies_dict))
+        else:
+            logger.debug("저장할 쿠키가 없습니다.")
     except Exception as e:
-        print("  -> 쿠키 저장 실패:", e)
+        logger.warning("쿠키 저장 실패. cookie_file=%s", COOKIE_FILE, exc_info=True)
 
 # 전역 세션 변수 생성
 session = create_session()
@@ -97,6 +107,8 @@ def parse_list_page(html: str):
     links = soup.select('.title a, .hotdeal_var8 a')
     seen = set()
     
+    logger.debug("목록 페이지 링크 후보 수집 완료. link_count=%d", len(links))
+    
     for a in links:
         
         #  공지사항 필터링: 부모 태그에 'notice' 클래스가 있거나, 제목에 '[공지]'가 있으면 건너뜀
@@ -124,10 +136,12 @@ def parse_list_page(html: str):
             
         external_id = extract_external_id(url)
         if not external_id:
+            logger.debug("external_id 추출 실패. url=%s, title=%s", url, title)
             continue
         
         # 중복 제거
         if external_id in seen:
+            logger.debug("중복 게시글 스킵. external_id=%s", external_id)
             continue
         seen.add(external_id)
         
@@ -160,10 +174,13 @@ def parse_list_page(html: str):
             "scrapedAt": datetime.now(KST).isoformat(timespec="seconds") 
         })
         
-    #  수집 개수 제한: 5개가 꽉 차면 즉시 크롤링 중단
-        if len(results) >= 3:
+    #  수집 개수 제한: 4개가 꽉 차면 즉시 크롤링 중단
+        if len(results) >= 4:
+            logger.debug("수집 제한 도달. limit=%d", len(results))
             break
-            
+        
+    logger.info("FMKorea 목록 파싱 완료. item_count=%d", len(results))
+    
     return results
 
 def fetch_detail_and_update(item: dict):
@@ -171,10 +188,17 @@ def fetch_detail_and_update(item: dict):
     에펨코리아 상세 페이지 파싱 (캡처된 HTML 구조 완벽 반영)
     """
     url = item["sourceUrl"]
+    logger.debug("상세 페이지 요청 시작. external_id=%s, url=%s", item.get("externalId"), url)
+    
     resp = session.get(url, timeout=15)
     
     if resp.status_code != 200:
-        print(f"  -> 상세 페이지 접근 실패! (상태 코드: {resp.status_code}) - {url}")
+        logger.warning(
+            "상세 페이지 접근 실패. status_code=%s, external_id=%s, url=%s",
+            resp.status_code,
+            item.get("externalId"),
+            url
+        )
         return item
         
     soup = BeautifulSoup(resp.text, "lxml")
@@ -255,7 +279,12 @@ def fetch_detail_and_update(item: dict):
                     dt = dt.replace(tzinfo=KST)
                     item["postedAt"] = dt.isoformat(timespec="seconds")
                 except ValueError:
-                    pass
+                    logger.debug(
+                        "작성일 파싱 실패. external_id=%s, raw_date=%s",
+                        item.get("externalId"),
+                        date_match.group(1),
+                        exc_info=True
+                    )
 
     # 4. 카테고리
     category_span = soup.select_one('.category')
@@ -268,60 +297,85 @@ def fetch_detail_and_update(item: dict):
     if expired_msg:
         item["isExpired"] = True
         
+    logger.debug(
+        "상세 페이지 파싱 완료. external_id=%s, title=%s, price=%s, mall=%s",
+        item.get("externalId"),
+        item.get("title"),
+        item.get("price"),
+        item.get("mallName")
+    )
+    
     return item
 
 def fetch_hotdeal_list():
+    logger.info("FMKorea 목록 요청 시작. url=%s", FMKOREA_GOTDEAL_URL)
     # requests 대신 scraper 사용 -> 여전히 430 으로 막힘. curl_cffi 사용
     resp = session.get(FMKOREA_GOTDEAL_URL, timeout=15)
     
     if resp.status_code != 200:
-        print(f"Error: {resp.status_code}")
+        logger.error("FMKorea 목록 요청 실패. status_code=%s", resp.status_code)
         
     resp.raise_for_status()
+    logger.debug("FMKorea 목록 응답 수신. html_length=%d", len(resp.text))
     return parse_list_page(resp.text)
 
 def ingest_to_backend(items):
     if not items:
-        print("불러 올 항목이 없습니다.")
+        logger.warning("백엔드로 전송할 항목이 없습니다.")
         return
     
-    resp = requests.post(BACKEND_INGEST_URL, json=items, timeout=20)
-    resp.raise_for_status()
-    print("Ingest response: ", resp.status_code, resp.json())
+    logger.info("백엔드 전송 시작. url=%s, item_count=%d", BACKEND_INGEST_URL, len(items))
+    
+    try:
+        resp = requests.post(BACKEND_INGEST_URL, json=items, timeout=20)
+        resp.raise_for_status()
+
+        try:
+            body = resp.json()
+        except ValueError:
+            body = resp.text
+
+        logger.info("백엔드 전송 성공. status_code=%s, response=%s", resp.status_code, body)
+    except Exception:
+        logger.error("백엔드 전송 실패. item_count=%d", len(items), exc_info=True)
+        raise
     
 def main():
-    print("Fetching hotdeal list...")
-    items = fetch_hotdeal_list()
-    print(f"총 {len(items)}개의 핫딜 목록을 찾았습니다.")
-    
-    enriched_items = []
-    
-    print("상세 페이지로 접속하여 추가 정보를 긁어옵니다...")
-    
-    for idx, item in enumerate(items, 1):
-        print(f"[{idx}/{len(items)}] 상세 정보 수집 중: {item['title'][:20]}...")
-        try:
-            enriched = fetch_detail_and_update(item)
-            enriched_items.append(enriched)
-        except Exception as e:
-            print(f"  -> 수집 에러 발생: {e}")
-            
-        # 봇 탐지 및 IP 차단 방지를 위해 반드시 상세 페이지마다 1~2초 쉬어줍니다!
-        time.sleep(random.uniform(2.0, 4.0))
-        
-    #print("\n=== 긁어온 데이터 확인 (여섯 번째 데이터) ===")
-    #if enriched_items:
-    #    print(json.dumps(enriched_items[0], ensure_ascii=False, indent=2))
-    print("=======================================\n")
-    
-    print("백엔드로 데이터를 전송합니다...")
-    ingest_to_backend(enriched_items)
-    
-    
-    # 백엔드 전송까지 완료된 후, 갱신된 쿠키를 저장합니다!
-    save_cookies(session)
-    
-    print("모든 작업이 완료되었습니다!")
+    logger.info("=== FMKorea 핫딜 크롤링 시작 ===")
+    try:
+        items = fetch_hotdeal_list()
+        logger.info("목록 수집 완료. item_count=%d", len(items))
+
+        enriched_items = []
+        logger.info("상세 페이지 추가 정보 수집 시작.")
+
+        for idx, item in enumerate(items, 1):
+            logger.info("[%d/%d] 상세 정보 수집 중. title=%s", idx, len(items), item["title"][:40])
+            try:
+                enriched = fetch_detail_and_update(item)
+                enriched_items.append(enriched)
+            except Exception:
+                logger.error(
+                    "상세 정보 수집 중 오류 발생. external_id=%s, title=%s",
+                    item.get("externalId"),
+                    item.get("title"),
+                    exc_info=True
+                )
+
+            time.sleep(random.uniform(2.0, 4.0))
+
+        logger.debug(
+            "수집 데이터 샘플: %s",
+            json.dumps(enriched_items[0], ensure_ascii=False, indent=2) if enriched_items else "없음"
+        )
+
+        ingest_to_backend(enriched_items)
+        save_cookies(session)
+
+        logger.info("=== FMKorea 핫딜 크롤링 완료. sent_count=%d ===", len(enriched_items))
+    except Exception:
+        logger.error("FMKorea 크롤링 작업 실패", exc_info=True)
+        raise
 
 if __name__ == "__main__":
     main()
