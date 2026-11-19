@@ -23,12 +23,12 @@ export default function DetailScreen() {
     );
   }
 
-  // ⭐️ 기기(스마트폰)의 기본 브라우저를 열어주는 마법의 함수!
+  // 기기(스마트폰)의 기본 브라우저를 열어주는 마법의 함수!
   const openLink = async (url?: string) => {
     if (url) {
       await Linking.openURL(url);
     } else {
-      alert('연결된 링크가 없습니다. 😢');
+      alert('연결된 링크가 없습니다.');
     }
   };
 
