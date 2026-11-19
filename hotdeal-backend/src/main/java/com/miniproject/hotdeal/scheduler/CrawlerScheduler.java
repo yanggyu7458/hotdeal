@@ -17,8 +17,11 @@ public class CrawlerScheduler {
             // 파이썬 실행 파일(python.exe)과 크롤러 스크립트(main.py)의 절대 경로를 적어야함
             //String pythonExecutable = "python"; // 가상환경을 쓴다면 가상환경 안의 python.exe 경로 입력
             //String scriptPath = "C:/git/hotdeal/hotdeal-crawler/main.py"; // 실제 main.py 경로로 수정 필수
-            String pythonExecutable = "/home/ubuntu/hotdeal-crawler/.venv/bin/python";
-            String scriptPath = "/home/ubuntu/hotdeal-crawler/main.py";
+            //String pythonExecutable = "/home/ubuntu/hotdeal-crawler/.venv/bin/python";
+            //String scriptPath = "/home/ubuntu/hotdeal-crawler/main.py";
+            // 미니pc 경로
+            String pythonExecutable = "/home/jwon/server/hotdeal-crawler/.venv/bin/python";
+            String scriptPath = "/home/jwon/server/hotdeal-crawler/main.py";
 
             ProcessBuilder pb = new ProcessBuilder(pythonExecutable, scriptPath);
 
@@ -66,10 +69,15 @@ public class CrawlerScheduler {
             
 
             // AWS EC2에서 실행할 때는 아래처럼 경로 설정 (JW pc에서 테스트할 때는 위에 로컬용 경로로 바꿔야함)
-            String pythonExecutable = "/home/ubuntu/hotdeal-crawler/.venv/bin/python"; 
-            String scriptPath = "/home/ubuntu/hotdeal-crawler/ppomppu_crawler.py";
+            //String pythonExecutable = "/home/ubuntu/hotdeal-crawler/.venv/bin/python"; 
+            //String scriptPath = "/home/ubuntu/hotdeal-crawler/ppomppu_crawler.py";
+
+            // 미니pc 경로
+            String pythonExecutable = "/home/jwon/server/hotdeal-crawler/.venv/bin/python";
+            String scriptPath = "/home/jwon/server/hotdeal-crawler/ppomppu_crawler.py";
 
             ProcessBuilder pb = new ProcessBuilder(pythonExecutable, scriptPath);
+            pb.redirectErrorStream(true);
 
             pb.environment().put("PYTHONIOENCODING", "UTF-8");
 
@@ -86,14 +94,9 @@ public class CrawlerScheduler {
             int exitCode = process.waitFor();
             
             if (exitCode == 0) {
-                System.out.println("[PPom 크롤링 성공] DB 업데이트가 완료되었습니다");
+                System.out.println("[PPom 크롤링 완료] 정상 종료됨");
             } else {
-                System.out.println("[PPom 크롤링 실패] 에러 코드로 종료됨: " + exitCode);
-                // 에러 로그 출력
-                BufferedReader errorReader = new BufferedReader(new InputStreamReader(process.getErrorStream(), "UTF-8"));
-                while ((line = errorReader.readLine()) != null) {
-                    System.err.println("[Python Error] " + line);
-                }
+                System.err.println("[PPom 크롤링 실패] 에러 코드로 종료됨: " + exitCode);
             }
 
         } catch (Exception e) {
@@ -114,8 +117,12 @@ public class CrawlerScheduler {
             //String scriptPath = "C:/git/hotdeal/hotdeal-crawler/qz_crawler.py"; // 실제 qz_crawler.py 경로로 수정 필수
 
             // AWS EC2에서 실행할 때는 아래처럼 경로 설정 (JW pc에서 테스트할 때는 위에 로컬용 경로로 바꿔야함)
-            String pythonExecutable = "/home/ubuntu/hotdeal-crawler/.venv/bin/python"; 
-            String scriptPath = "/home/ubuntu/hotdeal-crawler/qz_crawler.py";
+            //String pythonExecutable = "/home/ubuntu/hotdeal-crawler/.venv/bin/python"; 
+            //String scriptPath = "/home/ubuntu/hotdeal-crawler/qz_crawler.py";
+
+            // 미니pc 경로
+            String pythonExecutable = "/home/jwon/server/hotdeal-crawler/.venv/bin/python";
+            String scriptPath = "/home/jwon/server/hotdeal-crawler/qz_crawler.py";
 
             ProcessBuilder pb = new ProcessBuilder(pythonExecutable, scriptPath);
 

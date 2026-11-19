@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View, FlatList, Image, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
+import { StyleSheet, Text, View, FlatList, Image, TouchableOpacity, ActivityIndicator, ScrollView, Modal } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -42,6 +42,15 @@ export default function HomeScreen() {
   // 위로가기 버튼 표시 여부 & FlatList 참조 조종기
   const [showTopButton, setShowTopButton] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+
+  // 알림 기능용 상태 추가
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+
+  // 임시 알림 데이터 (나중에 API로 대체)
+  const [notifications, setNotifications] = useState([
+    { id: '1', title: '아이패드 프로 11인치 역대급 특가', body: '1,150,000원 (알림 키워드: 아이패드)', date: '10분 전', isRead: false },
+    { id: '2', title: '맥심 모카골드 180T + 사은품', body: '23,000원 (알림 키워드: 맥심)', date: '1시간 전', isRead: true },
+  ]);
 
   // 처음 앱 화면이 뜰 때 0번 페이지를 호출
   // 카테고리가 바뀔 때마다 상태를 먼저 초기화하고 새 데이터를 부르도록 변경
@@ -193,11 +202,15 @@ export default function HomeScreen() {
         <Text style={styles.logoText}>🔥 핫딜 모음</Text>
       </View>
       <View style={styles.headerIcons}>
-        <TouchableOpacity onPress={() => router.push('/search')} style={styles.iconButton}>
+        <TouchableOpacity onPress={() => router.push('/search' as any)} style={styles.iconButton}>
           <Ionicons name="search" size={24} color="#333" />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.iconButton}>
-          <Ionicons name="moon-outline" size={24} color="#333" />
+        <TouchableOpacity style={styles.iconButton} onPress={() => setShowNotificationModal(true)}>
+          <Ionicons name="notifications-outline" size={24} color="#333" />
+          {/* 안 읽은 알림이 있으면 빨간 점 표시 (선택사항) */}
+          {notifications.some(n => !n.isRead) ? (
+            <View style={styles.badgeDot} />
+          ) : null}
         </TouchableOpacity>
         <TouchableOpacity style={styles.iconButton}>
           <Ionicons name="menu" size={24} color="#333" />
@@ -296,17 +309,76 @@ export default function HomeScreen() {
 
   // 최종 화면 조립
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       {renderHeader()}
-      {renderMainTab()}
+      {renderMainTab()} 
+      
       {mainTab === 'hotdeal' ? renderHotdealContent() : renderCvsContent()}
 
-      {/* 위로가기 플로팅 버튼 */}
-      {showTopButton && (
+      {showTopButton && mainTab === 'hotdeal' ? (
         <TouchableOpacity style={styles.fab} onPress={scrollToTop} activeOpacity={0.8}>
           <Text style={styles.fabText}>↑</Text>
         </TouchableOpacity>
-      )}
+      ) : null}
+
+      {/* ========================================== */}
+      {/* 알림 내역 */}
+      {/* ========================================== */}
+      <Modal
+        visible={showNotificationModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowNotificationModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {/* 모달 헤더 */}
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>알림 내역</Text>
+              <TouchableOpacity 
+                  style={styles.keywordSettingBtn}
+                  onPress={() => {
+                    setShowNotificationModal(false); // 1. 모달을 먼저 닫고
+                    router.push('/keyword' as any);  // 2. 키워드 설정 화면으로 이동!
+                  }}
+                >
+                  <Ionicons name="settings-outline" size={16} color="#666" />
+                  <Text style={styles.keywordSettingText}>키워드 설정</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={() => setShowNotificationModal(false)}>
+                  <Ionicons name="close" size={28} color="#333" />
+                </TouchableOpacity>
+            </View>
+
+            {/* 알림 리스트 */}
+            <FlatList
+              data={notifications}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={{ padding: 15 }}
+              ListEmptyComponent={
+                <View style={styles.emptyNotification}>
+                  <Ionicons name="notifications-off-outline" size={40} color="#ccc" />
+                  <Text style={styles.emptyNotificationText}>받은 알림이 없습니다.</Text>
+                </View>
+              }
+              renderItem={({ item }) => (
+                <TouchableOpacity style={[styles.notificationCard, !item.isRead ? styles.unreadNotification : null]}>
+                  <View style={styles.notificationIconBg}>
+                    <Ionicons name="pricetag" size={18} color="#E53935" />
+                  </View>
+                  <View style={styles.notificationTextWrap}>
+                    <Text style={styles.notificationTitle} numberOfLines={2}>{item.title}</Text>
+                    <Text style={styles.notificationBody}>{item.body}</Text>
+                    <Text style={styles.notificationDate}>{item.date}</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -364,6 +436,29 @@ const styles = StyleSheet.create({
   stats: { fontSize: 12, color: '#888888' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   footerLoader: { paddingVertical: 20 },
+
+  badgeDot: { position: 'absolute', top: -2, right: -2, width: 8, height: 8, borderRadius: 4, backgroundColor: '#E53935', borderWidth: 1, borderColor: '#fff' },
+  
+  // 모달 스타일
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, height: '80%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#333' },
+
+  // 추가할 키워드 설정 버튼 스타일
+  keywordSettingBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0F0F0', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 15, marginRight: 15 },
+  keywordSettingText: { fontSize: 13, color: '#666', marginLeft: 4, fontWeight: '600' },
+  
+  // 알림 카드 스타일
+  notificationCard: { flexDirection: 'row', padding: 15, backgroundColor: '#fff', borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#eee' },
+  unreadNotification: { backgroundColor: '#FFF5F5', borderColor: '#FFCDD2' },
+  notificationIconBg: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFEBEE', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+  notificationTextWrap: { flex: 1 },
+  notificationTitle: { fontSize: 15, fontWeight: '600', color: '#333', marginBottom: 4, lineHeight: 20 },
+  notificationBody: { fontSize: 13, color: '#666', marginBottom: 6 },
+  notificationDate: { fontSize: 11, color: '#aaa' },
+  emptyNotification: { alignItems: 'center', marginTop: 100 },
+  emptyNotificationText: { marginTop: 10, fontSize: 15, color: '#999' },
   
   // 위로가기 플로팅 버튼 스타일
   fab: {
