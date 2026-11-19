@@ -295,7 +295,7 @@ def fetch_hotdeal_list():
 
 def ingest_to_backend(items):
     if not items:
-        logger.warning("백엔드로 전송할 항목이 없습니다.")
+        logger.warning("백엔드 전송 건너뜀. 전송할 항목이 없습니다.")
         return
     
     logger.info("백엔드 전송 시작. url=%s, item_count=%d", BACKEND_INGEST_URL, len(items))
@@ -306,8 +306,9 @@ def ingest_to_backend(items):
         resp.raise_for_status()
         print("[백엔드 전송 성공]", resp.status_code)
         
-    except Exception as e:
-        print("[백엔드 전송 실패] : ", e)
+    except requests.exceptions.RequestException as exc:
+        logger.error("백엔드 전송 실패. item_count=%d, error=%s", len(items), exc)
+        raise
         
 def main():
     print("=== 뽐뿌 핫딜 크롤링 시작 ===")
@@ -330,8 +331,8 @@ def main():
     if enriched_items:
         print("\n=== 데이터 수집 결과 샘플 ===")
         print(json.dumps(enriched_items[0], ensure_ascii=False, indent=2))
-        
-    print("백엔드로 데이터를 전송합니다...")
+        print("백엔드로 데이터를 전송합니다...")
+
     ingest_to_backend(enriched_items)
     print("모든 작업이 완료되었습니다!")
 
